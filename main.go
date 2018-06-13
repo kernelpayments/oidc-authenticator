@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	oidc "github.com/coreos/go-oidc"
@@ -69,9 +70,8 @@ func SaveCookie(rw http.ResponseWriter, c *Cookie) {
 }
 
 type Server struct {
-	provider     *oidc.Provider
-	verifier     *oidc.IDTokenVerifier
-	oauth2Config oauth2.Config
+	provider *oidc.Provider
+	verifier *oidc.IDTokenVerifier
 }
 
 func NewServer() *Server {
@@ -83,13 +83,6 @@ func NewServer() *Server {
 	return &Server{
 		provider: provider,
 		verifier: provider.Verifier(&oidc.Config{ClientID: *clientID}),
-		oauth2Config: oauth2.Config{
-			ClientID:     *clientID,
-			ClientSecret: *clientSecret,
-			RedirectURL:  "http://localhost:8080/callback",
-			Endpoint:     provider.Endpoint(),
-			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
-		},
 	}
 }
 
@@ -111,10 +104,29 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) getOauthConfig(r *http.Request) *oauth2.Config {
+	u := url.URL{
+		Host: r.Host,
+		Path: "/callback",
+	}
+	if *cookieSecure {
+		u.Scheme = "https"
+	} else {
+		u.Scheme = "http"
+	}
+	return &oauth2.Config{
+		ClientID:     *clientID,
+		ClientSecret: *clientSecret,
+		RedirectURL:  u.String(),
+		Endpoint:     s.provider.Endpoint(),
+		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+	}
+}
+
 func (s *Server) HandleLogin(rw http.ResponseWriter, r *http.Request) {
 	state := generateRandomState()
 	SaveCookie(rw, &Cookie{State: state, Redirect: r.URL.Query().Get("rd")})
-	http.Redirect(rw, r, s.oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
+	http.Redirect(rw, r, s.getOauthConfig(r).AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
 }
 
 func (s *Server) verifyIDToken(r *http.Request, rw http.ResponseWriter, rawIDToken string) error {
@@ -153,7 +165,7 @@ func (s *Server) HandleLoginCallback(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauth2Token, err := s.oauth2Config.Exchange(r.Context(), r.URL.Query().Get("code"))
+	oauth2Token, err := s.getOauthConfig(r).Exchange(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
