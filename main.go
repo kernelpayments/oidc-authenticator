@@ -79,11 +79,29 @@ func NewServer() *Server {
 	if err != nil {
 		panic(err)
 	}
-
 	return &Server{
 		provider: provider,
 		verifier: provider.Verifier(&oidc.Config{ClientID: *clientID}),
 	}
+}
+
+func (s *Server) refreshToken(refreshToken string) (string, error) {
+	v := url.Values{}
+	v.Set("client_id", *clientID)
+	v.Set("client_secret", *clientSecret)
+	v.Set("refresh_token", refreshToken)
+	v.Set("grant_type", "refresh_token")
+	resp, err := http.DefaultClient.PostForm(s.provider.Endpoint().TokenURL, v)
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		IDToken string `json:"id_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return "", err
+	}
+	return r.IDToken, nil
 }
 
 func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
@@ -97,6 +115,17 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.verifyIDToken(r, rw, idToken); err != nil {
+		if c.RefreshToken != "" {
+			if newToken, err := s.refreshToken(c.RefreshToken); err == nil {
+				SaveCookie(rw, &Cookie{
+					RefreshToken: c.RefreshToken,
+					IDToken:      newToken,
+				})
+				rw.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+		SaveCookie(rw, &Cookie{})
 		rw.Header().Set("WWW-Authenticate", "Basic")
 		rw.WriteHeader(http.StatusUnauthorized)
 	} else {
@@ -126,7 +155,7 @@ func (s *Server) getOauthConfig(r *http.Request) *oauth2.Config {
 func (s *Server) HandleLogin(rw http.ResponseWriter, r *http.Request) {
 	state := generateRandomState()
 	SaveCookie(rw, &Cookie{State: state, Redirect: r.URL.Query().Get("rd")})
-	http.Redirect(rw, r, s.getOauthConfig(r).AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
+	http.Redirect(rw, r, s.getOauthConfig(r).AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent")), http.StatusFound)
 }
 
 func (s *Server) verifyIDToken(r *http.Request, rw http.ResponseWriter, rawIDToken string) error {
