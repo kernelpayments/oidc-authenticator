@@ -31,6 +31,7 @@ type Cookie struct {
 	IDToken      string `json:"id_token"`
 	RefreshToken string `json:"refresh_token"`
 	State        string `json:"state"`
+	Redirect     string `json:"rd"`
 }
 
 func LoadCookie(r *http.Request) *Cookie {
@@ -112,7 +113,7 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 
 func (s *Server) HandleLogin(rw http.ResponseWriter, r *http.Request) {
 	state := generateRandomState()
-	SaveCookie(rw, &Cookie{State: state})
+	SaveCookie(rw, &Cookie{State: state, Redirect: r.URL.Query().Get("rd")})
 	http.Redirect(rw, r, s.oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline), http.StatusFound)
 }
 
@@ -148,29 +149,37 @@ func (s *Server) verifyIDToken(r *http.Request, rw http.ResponseWriter, rawIDTok
 func (s *Server) HandleLoginCallback(rw http.ResponseWriter, r *http.Request) {
 	c := LoadCookie(r)
 	if c.State != r.URL.Query().Get("state") {
-		panic("State mismatch")
+		http.Error(rw, "Invalid state", http.StatusBadRequest)
+		return
 	}
 
 	oauth2Token, err := s.oauth2Config.Exchange(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
-		panic(err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// Extract the ID Token from OAuth2 token.
 	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
 	if !ok {
-		panic("wtf")
+		http.Error(rw, "Could not get id_token", http.StatusBadRequest)
+		return
 	}
 
 	if err := s.verifyIDToken(r, rw, rawIDToken); err != nil {
-		panic(err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	SaveCookie(rw, &Cookie{
 		IDToken:      rawIDToken,
 		RefreshToken: oauth2Token.RefreshToken,
 	})
-	rw.WriteHeader(http.StatusOK)
+	if c.Redirect != "" {
+		http.Redirect(rw, r, c.Redirect, http.StatusFound)
+	} else {
+		rw.WriteHeader(http.StatusOK)
+	}
 }
 
 func generateRandomState() string {
