@@ -7,19 +7,30 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	oidc "github.com/coreos/go-oidc"
 	"golang.org/x/oauth2"
+	yaml "gopkg.in/yaml.v2"
 )
+
+type Config struct {
+	UserMap map[string]string `yaml:"userMap"`
+}
+
+var config = Config{
+	UserMap: make(map[string]string),
+}
 
 var (
 	issuerURL    = flag.String("issuer-url", "https://accounts.google.com", "")
 	clientID     = flag.String("client-id", "", "")
 	clientSecret = flag.String("client-secret", "", "")
-	emailDomain  = flag.String("email-domain", "", "")
+	configFile   = flag.String("config-file", "", "")
 
 	cookieName     = flag.String("cookie-name", "_oidc", "")
 	cookieDomain   = flag.String("cookie-domain", "", "")
@@ -158,6 +169,21 @@ func (s *Server) HandleLogin(rw http.ResponseWriter, r *http.Request) {
 	http.Redirect(rw, r, s.getOauthConfig(r).AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent")), http.StatusFound)
 }
 
+func getUserForEmail(email string) (string, error) {
+	emailBytes := []byte(email)
+	for k, v := range config.UserMap {
+		r := regexp.MustCompile("^" + k + "$")
+		match := r.FindSubmatchIndex(emailBytes)
+		if match == nil {
+			continue
+		}
+
+		res := r.Expand(nil, []byte(v), emailBytes, match)
+		return string(res), nil
+	}
+	return "", fmt.Errorf("Unauthorized Email %s", email)
+}
+
 func (s *Server) verifyIDToken(r *http.Request, rw http.ResponseWriter, rawIDToken string) error {
 	// Parse and verify ID Token payload.
 	idToken, err := s.verifier.Verify(r.Context(), rawIDToken)
@@ -177,11 +203,12 @@ func (s *Server) verifyIDToken(r *http.Request, rw http.ResponseWriter, rawIDTok
 	if !claims.Verified {
 		return fmt.Errorf("Email %s in claim not verified", claims.Email)
 	}
-	suffix := "@" + *emailDomain
-	if !strings.HasSuffix(claims.Email, suffix) {
-		return fmt.Errorf("Email %s incorrect domain", claims.Email)
+
+	user, err := getUserForEmail(claims.Email)
+	if err != nil {
+		return err
 	}
-	rw.Header().Set("X-Auth-Request-User", strings.TrimSuffix(claims.Email, suffix))
+	rw.Header().Set("X-Auth-Request-User", user)
 	rw.Header().Set("X-Auth-Request-Email", claims.Email)
 
 	return nil
@@ -233,6 +260,15 @@ func generateRandomState() string {
 
 func main() {
 	flag.Parse()
+
+	cfgData, err := ioutil.ReadFile(*configFile)
+	if err != nil {
+		panic(err)
+	}
+	if err := yaml.Unmarshal(cfgData, &config); err != nil {
+		panic(err)
+	}
+
 	s := NewServer()
 
 	http.HandleFunc("/login", s.HandleLogin)
