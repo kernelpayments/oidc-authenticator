@@ -121,8 +121,12 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 	if user, pass, ok := r.BasicAuth(); ok && user == "_oidc" {
 		idToken = pass
 	}
-	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
-		idToken = strings.TrimPrefix(auth, "Bearer ")
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		parts := strings.SplitN(auth, " ", 2)
+		t := strings.ToLower(parts[0])
+		if len(parts) == 2 && (t == "bearer" || t == "token") {
+			idToken = parts[1]
+		}
 	}
 
 	if err := s.verifyIDToken(r, rw, idToken); err != nil {
