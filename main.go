@@ -34,7 +34,7 @@ var (
 
 	cookieName     = flag.String("cookie-name", "_oidc", "")
 	cookieDomain   = flag.String("cookie-domain", "", "")
-	cookiePath     = flag.String("cookie-path", "", "")
+	cookiePath     = flag.String("cookie-path", "/", "")
 	cookieHTTPOnly = flag.Bool("cookie-http-only", true, "")
 	cookieSecure   = flag.Bool("cookie-secure", true, "")
 )
