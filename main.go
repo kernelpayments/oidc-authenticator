@@ -151,6 +151,7 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 	// If it worked, return 200 OK.
 	if err == nil {
 		rw.WriteHeader(http.StatusOK)
+		rw.Write([]byte(idToken))
 		return
 	}
 
@@ -166,6 +167,7 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 				cookie.IDToken = idToken
 				SaveCookie(rw, cookie)
 				rw.WriteHeader(http.StatusOK)
+				rw.Write([]byte(idToken))
 				return
 			}
 
