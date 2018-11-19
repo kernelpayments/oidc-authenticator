@@ -115,37 +115,64 @@ func (s *Server) refreshToken(refreshToken string) (string, error) {
 	return r.IDToken, nil
 }
 
-func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
-	c := LoadCookie(r)
-	idToken := c.IDToken
+func (s *Server) getIdTokenFromRequest(r *http.Request) (string, *Cookie) {
 	if user, pass, ok := r.BasicAuth(); ok && user == "_oidc" {
-		idToken = pass
+		return pass, nil
 	}
+
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		parts := strings.SplitN(auth, " ", 2)
 		t := strings.ToLower(parts[0])
 		if len(parts) == 2 && (t == "bearer" || t == "token") {
-			idToken = parts[1]
+			return parts[1], nil
 		}
 	}
 
-	if err := s.verifyIDToken(r, rw, idToken); err != nil {
-		if c.RefreshToken != "" {
-			if newToken, err := s.refreshToken(c.RefreshToken); err == nil {
-				SaveCookie(rw, &Cookie{
-					RefreshToken: c.RefreshToken,
-					IDToken:      newToken,
-				})
+	cookie := LoadCookie(r)
+	return cookie.IDToken, cookie
+}
+
+func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
+	idToken, cookie := s.getIdTokenFromRequest(r)
+
+	// First attempt, verify the token.
+	err := s.verifyIDToken(r, rw, idToken)
+
+	// If it worked, return 200 OK.
+	if err == nil {
+		rw.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// If verification failed, it may be because it's expired.
+	// In this case, try to refresh it.
+	if strings.HasPrefix(err.Error(), "oidc: token is expired") && cookie != nil && cookie.RefreshToken != "" {
+		if idToken, err = s.refreshToken(cookie.RefreshToken); err == nil {
+			// Second attempt, verify the token we got from the refresh.
+			err := s.verifyIDToken(r, rw, idToken)
+
+			// If it worked, return 200 OK.
+			if err == nil {
+				cookie.IDToken = idToken
+				SaveCookie(rw, cookie)
 				rw.WriteHeader(http.StatusOK)
 				return
 			}
+
+			// If it didn't work, carry on and handle it like other failures.
 		}
-		SaveCookie(rw, &Cookie{})
-		rw.Header().Set("WWW-Authenticate", "Basic")
-		rw.WriteHeader(http.StatusUnauthorized)
-	} else {
-		rw.WriteHeader(http.StatusOK)
 	}
+
+	// If the idToken came from a cookie, clear out the cookie. This prevents
+	// ongoing verification and refresh attempts of a bad cookie.
+	if cookie != nil {
+		SaveCookie(rw, &Cookie{})
+	}
+
+	// WWW-Authenticate is needed for Git to realize it needs authentication.
+	rw.Header().Set("WWW-Authenticate", "Basic")
+
+	rw.WriteHeader(http.StatusUnauthorized)
 }
 
 func (s *Server) getOauthConfig(r *http.Request) *oauth2.Config {
