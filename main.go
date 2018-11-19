@@ -34,11 +34,10 @@ var (
 
 	externalURL = flag.String("external-url", "", "")
 
-	cookieName     = flag.String("cookie-name", "_oidc", "")
-	cookieDomain   = flag.String("cookie-domain", "", "")
-	cookiePath     = flag.String("cookie-path", "/", "")
-	cookieHTTPOnly = flag.Bool("cookie-http-only", true, "")
-	cookieSecure   = flag.Bool("cookie-secure", true, "")
+	cookieName   = flag.String("cookie-name", "_oidc", "")
+	cookieDomain = flag.String("cookie-domain", "", "")
+	cookiePath   = flag.String("cookie-path", "/", "")
+	cookieSecure = flag.Bool("cookie-secure", true, "")
 )
 
 type Cookie struct {
@@ -75,7 +74,7 @@ func SaveCookie(rw http.ResponseWriter, c *Cookie) {
 		Name:     *cookieName,
 		Domain:   *cookieDomain,
 		Path:     *cookiePath,
-		HttpOnly: *cookieHTTPOnly,
+		HttpOnly: true,
 		Secure:   *cookieSecure,
 		Value:    base64.URLEncoding.EncodeToString(data),
 	}
