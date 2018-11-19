@@ -32,6 +32,8 @@ var (
 	clientSecret = flag.String("client-secret", "", "")
 	configFile   = flag.String("config-file", "", "")
 
+	externalURL = flag.String("external-url", "", "")
+
 	cookieName     = flag.String("cookie-name", "_oidc", "")
 	cookieDomain   = flag.String("cookie-domain", "", "")
 	cookiePath     = flag.String("cookie-path", "/", "")
@@ -81,8 +83,9 @@ func SaveCookie(rw http.ResponseWriter, c *Cookie) {
 }
 
 type Server struct {
-	provider *oidc.Provider
-	verifier *oidc.IDTokenVerifier
+	provider    *oidc.Provider
+	verifier    *oidc.IDTokenVerifier
+	oauthConfig *oauth2.Config
 }
 
 func NewServer() *Server {
@@ -90,9 +93,17 @@ func NewServer() *Server {
 	if err != nil {
 		panic(err)
 	}
+
 	return &Server{
 		provider: provider,
 		verifier: provider.Verifier(&oidc.Config{ClientID: *clientID}),
+		oauthConfig: &oauth2.Config{
+			ClientID:     *clientID,
+			ClientSecret: *clientSecret,
+			RedirectURL:  strings.TrimSuffix(*externalURL, "/") + "/callback",
+			Endpoint:     provider.Endpoint(),
+			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		},
 	}
 }
 
@@ -175,29 +186,10 @@ func (s *Server) HandleAuth(rw http.ResponseWriter, r *http.Request) {
 	rw.WriteHeader(http.StatusUnauthorized)
 }
 
-func (s *Server) getOauthConfig(r *http.Request) *oauth2.Config {
-	u := url.URL{
-		Host: r.Host,
-		Path: "/callback",
-	}
-	if *cookieSecure {
-		u.Scheme = "https"
-	} else {
-		u.Scheme = "http"
-	}
-	return &oauth2.Config{
-		ClientID:     *clientID,
-		ClientSecret: *clientSecret,
-		RedirectURL:  u.String(),
-		Endpoint:     s.provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
-	}
-}
-
 func (s *Server) HandleLogin(rw http.ResponseWriter, r *http.Request) {
 	state := generateRandomState()
 	SaveCookie(rw, &Cookie{State: state, Redirect: r.URL.Query().Get("rd")})
-	http.Redirect(rw, r, s.getOauthConfig(r).AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent")), http.StatusFound)
+	http.Redirect(rw, r, s.oauthConfig.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent")), http.StatusFound)
 }
 
 func getUserForEmail(email string) (string, error) {
@@ -252,7 +244,7 @@ func (s *Server) HandleLoginCallback(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	oauth2Token, err := s.getOauthConfig(r).Exchange(r.Context(), r.URL.Query().Get("code"))
+	oauth2Token, err := s.oauthConfig.Exchange(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
