@@ -42,9 +42,9 @@ var (
 )
 
 type Cookie struct {
-	IDToken      string `json:"id_token"`
-	RefreshToken string `json:"refresh_token"`
-	State        string `json:"state"`
+	IDToken      string `json:"i"`
+	RefreshToken string `json:"r"`
+	State        string `json:"s"`
 	Redirect     string `json:"rd"`
 }
 
