@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oidc-authenticator
+  namespace: oidc-authenticator
+  labels:
+    app: oidc-authenticator
+data:
+  config.yaml: |
+    userMap:
+      # All emails at example.com can login.
+      (.*)@example\.com: $1
+      # Grant access to a GCP service account, mapping it to the "ci" user
+      ci-agent@your-sample-project\.iam\.gserviceaccount\.com: ci

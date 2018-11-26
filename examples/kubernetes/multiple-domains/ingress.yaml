@@ -1,0 +1,20 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: oidc-authenticator
+  namespace: oidc-authenticator
+  labels:
+    app: oidc-authenticator
+spec:
+  tls:
+  - hosts:
+    - auth.example.com
+    secretName: tls-auth-example-com
+  rules:
+  - host: auth.example.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: oidc-authenticator
+          servicePort: 80

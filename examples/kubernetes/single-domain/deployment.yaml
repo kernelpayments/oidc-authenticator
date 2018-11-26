@@ -1,0 +1,33 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: oidc-authenticator
+  namespace: oidc-authenticator
+  labels:
+    app: oidc-authenticator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: oidc-authenticator
+    spec:
+      containers:
+      - name: oidc-authenticator
+        image: gcr.io/kernel-payments/oidc-authenticator:b8fcb11d84f230f98f4888c55438531534f5b765
+        args:
+        - --client-id=INSERT_CLIENT_ID_HERE.apps.googleusercontent.com
+        - --client-secret=INSERT_CLIENT_SECRET_HERE
+        - --config-file=/config/config.yaml
+        - --cookie-domain=echoserver.example.com
+        - --cookie-secure=true
+        - --external-url=https://echoserver.example.com/_oidc
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+      volumes:
+      - name: config-volume
+        configMap:
+          name: oidc-authenticator

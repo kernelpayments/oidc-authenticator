@@ -1,0 +1,22 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: oidc-authenticator
+  namespace: oidc-authenticator
+  labels:
+    app: oidc-authenticator
+  annotations:
+    ingress.kubernetes.io/rewrite-target: /
+spec:
+  tls:
+  - hosts:
+    - echoserver.example.com
+    secretName: tls-echoserver-example-com
+  rules:
+  - host: echoserver.example.com
+    http:
+      paths:
+      - path: /_oidc/
+        backend:
+          serviceName: oidc-authenticator
+          servicePort: 80

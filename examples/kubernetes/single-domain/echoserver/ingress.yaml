@@ -1,0 +1,21 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: echoserver
+  annotations:
+    ingress.kubernetes.io/auth-url: http://oidc-authenticator.oidc-authenticator.svc.cluster.local/auth
+    ingress.kubernetes.io/auth-signin: https://echoserver.example.com/_oidc/login
+    ingress.kubernetes.io/auth-response-headers: X-Auth-Request-User, X-Auth-Request-Email
+spec:
+  tls:
+  - hosts:
+    - echoserver.example.com
+    secretName: tls-echoserver-example-com
+  rules:
+  - host: echoserver.example.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: echoserver
+          servicePort: 80
